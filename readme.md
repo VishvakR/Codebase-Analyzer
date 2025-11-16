@@ -8,6 +8,11 @@ This README will help you set up, run, and extend the project.
 
 ---
 
+# Shapshort of the projects:
+
+<img width="2940" height="1670" alt="image" src="https://github.com/user-attachments/assets/2c84020a-25cb-4a5e-b6a1-0de0c7c548ff" />
+
+
 ## Table of contents
 
 1. [Project overview](#project-overview)
@@ -19,11 +24,8 @@ This README will help you set up, run, and extend the project.
    * [Environment variables](#environment-variables)
    * [Backend setup (FastAPI)](#backend-setup-fastapi)
    * [Frontend setup (React)](#frontend-setup-react)
-7. [Prompt templates (system + user + parsing rules)](#prompt-templates-system--user--parsing-rules)
-8. [Indexing strategies & vector DB management](#indexing-strategies--vector-db-management)
-9. [PR generation flow & safety checks](#pr-generation-flow--safety-checks)
-10. [Troubleshooting (Chroma readonly, permissions)](#troubleshooting-chroma-readonly-permissions)
-11. [License & credits](#license--credits)
+
+6. [License & credits](#license--credits)
 
 ---
 
@@ -158,155 +160,6 @@ npm install
 npm run dev
 ```
 
-Frontend talks to backend routes:
-
-* POST `/ingest` — clone & index repo
-* GET `/history/{repo_name}` — list snapshots
-* GET `/diff/{repo}/{old}/{new}?path=...` — get diff
-* POST `/query` — ask assistant (RAG + LLM)
-* POST `/generate_pr` — apply diff & open PR
-* GET `/download/{repo_name}` — download repo zip (optional)
-
----
-
-## Prompt templates (system + user + parsing rules)
-
-**System prompt**
-
-````
-System: You are a careful senior software engineer assistant that answers questions about a single indexed repository. Use ONLY the provided EVIDENCE blocks (file path + commit + code chunk). Do NOT invent commit IDs, file names, or line numbers. Be conservative. 
-Output format:
-1) SUMMARY:
-2) EVIDENCE:
-file:path@commit — rationale
-3) FIX:
-```diff
-<unified diff>
-````
-
-4. TESTS:
-   (code fences or 'No tests provided')
-5. METADATA:
-
-```json
-{ "confidence": "low|medium|high", "modified_files": ["..."], "patch_size_bytes": 123 }
-```
-
-```
-
-**User prompt template** (frontend fills):
-```
-
-User:
-repo_name: {repo_name}
-snapshot_commit: {snapshot_commit}
-selected_files: {files}
-file_contexts:
-// file: path@commit <code chunk>
-
-QUESTION:
-{question}
-
-CONSTRAINTS:
-
-* allowed_files: {allowed_files}
-* max_patch_bytes: {max_patch_bytes}
-
-````
-
-**Frontend parsing rules**
-- Extract `SUMMARY` (first non-empty line after `SUMMARY:`).
-- Extract `EVIDENCE` lines matching `file:path@commit[:line-range]`.
-- Extract first ```diff``` block via `const diffMatch = text.match(/```diff([\s\S]*?)```/);`.
-- Extract `TESTS` fenced blocks.
-- Parse `METADATA` JSON block.
-- Validate patch size and allowed files before enabling PR creation.
-
----
-
-## Indexing strategies & vector DB management
-
-**Two modes:**
-- **Reset on ingest (simple)** — remove previous collection and recreate from scratch.
-- **Incremental updates (recommended for large repos)** — compute file hash / commit id for each file and only upsert changed chunks.
-
-**Reset approach (safe)**
-```python
-vector_store = Chroma(collection_name="collections",
-                      embedding_function=embedding,
-                      persist_directory="data/chroma_vector_db")
-if os.path.exists("data/chroma_vector_db"):
-    vector_store.delete_collection()
-    vector_store = Chroma(...persist_directory="data/chroma_vector_db")
-vector_store.add_documents(chunks, ids=ids)
-vector_store.persist()
-````
-
-**Incremental approach (recommended in production)**
-
-* Compute fingerprint per file (sha1 of content).
-* Store metadata `{"path": "...", "commit": "...", "file_hash": "..."}` per chunk.
-* Query DB for existing chunk ids/metadata. Upsert only new/changed chunks; optionally delete removed ones.
-
-**Metadata to store per chunk**
-
-```
-{
-  "path": "src/foo.py",
-  "commit": "abc123",
-  "file_hash": "sha1...",
-  "chunk_id": 0
-}
-```
-
----
-
-## PR generation flow & safety checks
-
-1. LLM returns a patch in unified diff format in `FIX` section.
-2. Frontend extracts diff & metadata; validate:
-
-   * `len(diff_bytes) <= max_patch_bytes`
-   * `metadata.modified_files` ⊆ `allowed_files` (if provided)
-   * `confidence` not `low` (optional UX gating)
-3. Backend (`pr_generator`) flow:
-
-   * Create a new branch in a fork or in local checkout.
-   * Apply patch via `git apply` or by editing files programmatically.
-   * Run test suite in sandbox (Docker) or submit to GitHub Actions.
-   * Run linters/static analysis (bandit, mypy).
-   * If tests pass, open a **draft PR** via PyGithub with evidence & metadata.
-4. Always require human review before merging.
-
----
-
-## Testing
-
-* Unit tests for chunking, id generation, and metadata extraction (pytest).
-* Integration tests:
-
-  * Ingest a small public repo and validate snapshot list.
-  * Run `POST /query` with a known question and expect evidence in response.
-  * Simulate PR generation (apply diff in a temp clone) and run tests in Docker.
-* Example:
-
-```bash
-pytest tests/
-```
-
----
-
-## Deployment notes
-
-* Run FastAPI behind a process manager (gunicorn/uvicorn) and reverse proxy (nginx).
-* Persist `CHROMA_DIR` on a volume with sufficient IOPS.
-* Secrets: store `GITHUB_TOKEN`, `OPENAI_API_KEY` in secret manager or environment variables.
-* Scale:
-
-  * Use Qdrant for larger workloads (vector search clustering, persistence).
-  * Use a queue (Redis + RQ / Celery) for ingestion & long-running tasks.
-
----
 
 ## Roadmap / future work
 
