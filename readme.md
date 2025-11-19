@@ -1,6 +1,6 @@
 # Codebase Investigator — README
 
-**RAG-powered Developer Assistant & Auto-PR Generator**
+**RAG-powered Developer Assistant**
 
 A developer tool that ingests a codebase (source, docs, commits, issues), builds a retrieval index (LangChain + HuggingFace embeddings + Chroma), and uses RAG to answer developer questions and propose draft PRs. Includes a FastAPI backend and a minimal React frontend demo (ChatGPT-like chat with fixed bottom input, code/diff viewer, Download).
 
